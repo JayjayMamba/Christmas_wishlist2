@@ -1,11 +1,11 @@
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, get, onValue, off } from 'firebase/database';
+import { getDatabase, ref, set, get, onValue, off, remove } from 'firebase/database';
 
-// Configuration Firebase avec vos clés
+// Configuration Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyBkcZI7mUQQtVApobD-MouSZkiQMsfo5Yw",
   authDomain: "liste-noel-famille.firebaseapp.com",
-  databaseURL: "https://liste-noel-famille-default-rtdb.europe-west1.firebasedatabase.app",
+  databaseURL: "https://liste-noel-famille-default-rtdb.europe-west1.firebasedatabase.app", // ⚠️ AJOUTEZ CETTE LIGNE
   projectId: "liste-noel-famille",
   storageBucket: "liste-noel-famille.firebasestorage.app",
   messagingSenderId: "967237704243",
@@ -16,154 +16,145 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 
-// Classe de gestion du stockage Firebase
+console.log("🔥 Firebase initialisé avec succès");
+console.log("📡 Database URL:", database._repoInternal.repoInfo_.host);
+
+// Classe de gestion du stockage
 class FirebaseStorage {
   constructor() {
-    this.database = database;
     this.listeners = new Map();
-    this.isOnline = true;
   }
 
-  // Récupérer les données
-  async get(key) {
+  // Sauvegarder des données
+  async save(key, data) {
     try {
-      const dataRef = ref(this.database, key);
-      const snapshot = await get(dataRef);
-      
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        // Sauvegarder en local comme backup
-        this.setLocal(key, JSON.stringify(data));
-        return { value: JSON.stringify(data) };
-      }
-      
-      // Si pas de données sur Firebase, essayer le local
-      return this.getLocal(key);
+      console.log(`💾 Sauvegarde de ${key}:`, data);
+      await set(ref(database, key), data);
+      console.log(`✅ ${key} sauvegardé avec succès`);
+      return true;
     } catch (error) {
-      console.error('❌ Erreur Firebase get:', error);
-      // Fallback sur localStorage
-      return this.getLocal(key);
+      console.error(`❌ Erreur sauvegarde ${key}:`, error);
+      throw error;
     }
   }
 
-  // Sauvegarder les données
-  async set(key, value) {
+  // Charger des données
+  async load(key) {
     try {
-      const dataRef = ref(this.database, key);
-      const data = JSON.parse(value);
-      
-      // Sauvegarder sur Firebase
-      await set(dataRef, data);
-      
-      // Sauvegarder en local comme backup
-      this.setLocal(key, value);
-      
-      this.isOnline = true;
+      console.log(`📥 Chargement de ${key}...`);
+      const snapshot = await get(ref(database, key));
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        console.log(`✅ ${key} chargé:`, data);
+        return data;
+      } else {
+        console.log(`⚠️ ${key} n'existe pas encore`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`❌ Erreur chargement ${key}:`, error);
+      throw error;
+    }
+  }
+
+  // Supprimer des données
+  async delete(key) {
+    try {
+      console.log(`🗑️ Suppression de ${key}...`);
+      await remove(ref(database, key));
+      console.log(`✅ ${key} supprimé avec succès`);
       return true;
     } catch (error) {
-      console.error('❌ Erreur Firebase set:', error);
-      this.isOnline = false;
-      
-      // En cas d'erreur, sauvegarder quand même en local
-      this.setLocal(key, value);
-      return false;
+      console.error(`❌ Erreur suppression ${key}:`, error);
+      throw error;
     }
   }
 
   // Écouter les changements en temps réel
-  listen(key, callback) {
-    try {
-      const dataRef = ref(this.database, key);
-      
-      const listener = onValue(dataRef, 
-        (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.val();
-            const jsonData = JSON.stringify(data);
-            
-            // Sauvegarder en local
-            this.setLocal(key, jsonData);
-            
-            // Appeler le callback
-            callback({ value: jsonData });
-            
-            this.isOnline = true;
-          }
-        },
-        (error) => {
-          console.error('❌ Erreur listener Firebase:', error);
-          this.isOnline = false;
-        }
-      );
-
-      // Stocker le listener pour pouvoir le nettoyer plus tard
-      this.listeners.set(key, { ref: dataRef, listener });
-      
-      return () => this.unlisten(key);
-    } catch (error) {
-      console.error('❌ Erreur création listener:', error);
-      return () => {};
-    }
-  }
-
-  // Arrêter d'écouter
-  unlisten(key) {
-    const listenerData = this.listeners.get(key);
-    if (listenerData) {
-      off(listenerData.ref);
-      this.listeners.delete(key);
-    }
-  }
-
-  // Nettoyer tous les listeners
-  cleanup() {
-    this.listeners.forEach((listenerData, key) => {
-      off(listenerData.ref);
+  subscribe(key, callback) {
+    console.log(`👂 Abonnement aux changements de ${key}`);
+    const dbRef = ref(database, key);
+    
+    const unsubscribe = onValue(dbRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        console.log(`🔔 Mise à jour reçue pour ${key}:`, data);
+        callback(data);
+      } else {
+        console.log(`🔔 ${key} supprimé ou vide`);
+        callback(null);
+      }
+    }, (error) => {
+      console.error(`❌ Erreur d'écoute ${key}:`, error);
     });
+
+    this.listeners.set(key, unsubscribe);
+    return unsubscribe;
+  }
+
+  // Se désabonner
+  unsubscribe(key) {
+    if (this.listeners.has(key)) {
+      const unsubscribe = this.listeners.get(key);
+      unsubscribe();
+      this.listeners.delete(key);
+      console.log(`🔇 Désabonnement de ${key}`);
+    }
+  }
+
+  // Se désabonner de tout
+  unsubscribeAll() {
+    console.log(`🔇 Désabonnement de tous les listeners`);
+    this.listeners.forEach((unsubscribe) => unsubscribe());
     this.listeners.clear();
   }
 
-  // LocalStorage fallback
-  getLocal(key) {
+  // Exporter toutes les données
+  async exportAll() {
     try {
-      const value = localStorage.getItem(key);
-      return value ? { value } : null;
+      console.log("📦 Export de toutes les données...");
+      const snapshot = await get(ref(database, '/'));
+      if (snapshot.exists()) {
+        const allData = snapshot.val();
+        console.log("✅ Export réussi:", allData);
+        return allData;
+      }
+      return {};
     } catch (error) {
-      console.error('❌ Erreur localStorage get:', error);
-      return null;
+      console.error("❌ Erreur export:", error);
+      throw error;
     }
   }
 
-  setLocal(key, value) {
+  // Importer toutes les données
+  async importAll(data) {
     try {
-      localStorage.setItem(key, value);
+      console.log("📥 Import de toutes les données...", data);
+      await set(ref(database, '/'), data);
+      console.log("✅ Import réussi");
+      return true;
     } catch (error) {
-      console.error('❌ Erreur localStorage set:', error);
+      console.error("❌ Erreur import:", error);
+      throw error;
     }
   }
 
-  // Vérifier la connexion
-  async checkConnection() {
+  // Réinitialiser toutes les données
+  async reset() {
     try {
-      const connectedRef = ref(this.database, '.info/connected');
-      const snapshot = await get(connectedRef);
-      this.isOnline = snapshot.val() === true;
-      return this.isOnline;
+      console.log("🗑️ Réinitialisation de toutes les données...");
+      await remove(ref(database, '/'));
+      console.log("✅ Réinitialisation réussie");
+      return true;
     } catch (error) {
-      this.isOnline = false;
-      return false;
+      console.error("❌ Erreur réinitialisation:", error);
+      throw error;
     }
-  }
-
-  // Obtenir le statut de connexion
-  getConnectionStatus() {
-    return this.isOnline;
   }
 }
 
-// Créer et exporter l'instance unique
+// Instance unique
 export const storage = new FirebaseStorage();
-export { database };
 
-// Log de confirmation
-console.log('✅ Firebase initialisé avec succès');
+// Export de la database pour usage avancé
+export { database };
