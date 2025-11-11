@@ -76,110 +76,131 @@ function App() {
   const [lastSync, setLastSync] = useState(null);
   const [syncError, setSyncError] = useState(null);
 
-  // ===== EFFET: CHARGEMENT ET SYNCHRONISATION =====
-  useEffect(() => {
-    loadData();
+
+// ===== EFFETS =====
+
+// Charger les données au démarrage
+useEffect(() => {
+  console.log("🚀 Initialisation de l'application");
+  loadInitialData();
+
+  // Cleanup lors du démontage
+  return () => {
+    console.log("🧹 Nettoyage des listeners");
+    storage.unsubscribeAll();
+  };
+}, []);
+
+// Écouter les changements en temps réel
+useEffect(() => {
+  if (currentUser) {
+    console.log(`👂 Configuration des listeners pour ${currentUser}`);
     
-    // Écouter les changements en temps réel
-    const unsubscribe = storage.listen('christmas-app-data', (result) => {
-      if (result && result.value) {
-        try {
-          const data = JSON.parse(result.value);
-          
-          // Ne pas mettre à jour si on est en train d'éditer
-          if (!isEditing && !editingGift) {
-            setUsers(data.users || INITIAL_USERS);
-            setProfiles(data.profiles || {});
-            setLoginAttempts(data.loginAttempts || {});
-            setBlockedUsers(data.blockedUsers || []);
-            setLoginStats(data.loginStats || {});
-            setLastSync(new Date());
-            setSyncError(null);
-          }
-        } catch (error) {
-          console.error('Erreur parsing data:', error);
-          setSyncError('Erreur de synchronisation');
-        }
+    // Écouter les utilisateurs
+    const unsubUsers = storage.subscribe('users', (data) => {
+      if (data) {
+        console.log("🔔 Utilisateurs mis à jour:", data);
+        setUsers(data);
+        setLastSync(Date.now());
       }
     });
 
-    // Vérifier la connexion périodiquement
-    const checkConnection = async () => {
-      const connected = await storage.checkConnection();
-      setIsOnline(connected);
-    };
-    
-    checkConnection();
-    const connectionInterval = setInterval(checkConnection, 15000);
+    // Écouter les profils
+    const unsubProfiles = storage.subscribe('profiles', (data) => {
+      if (data) {
+        console.log("🔔 Profils mis à jour:", data);
+        setProfiles(data);
+        setLastSync(Date.now());
+      }
+    });
 
-    // Nettoyage
+    // Écouter les utilisateurs bloqués
+    const unsubBlocked = storage.subscribe('blockedUsers', (data) => {
+      if (data) {
+        console.log("🔔 Utilisateurs bloqués mis à jour:", data);
+        setBlockedUsers(data);
+      }
+    });
+
+    // Écouter les tentatives de connexion
+    const unsubAttempts = storage.subscribe('loginAttempts', (data) => {
+      if (data) {
+        console.log("🔔 Tentatives de connexion mises à jour:", data);
+        setLoginAttempts(data);
+      }
+    });
+
+    // Cleanup
     return () => {
-      if (unsubscribe) unsubscribe();
-      clearInterval(connectionInterval);
+      storage.unsubscribe('users');
+      storage.unsubscribe('profiles');
+      storage.unsubscribe('blockedUsers');
+      storage.unsubscribe('loginAttempts');
     };
-  }, []);
+  }
+}, [currentUser]);
 
-  // ===== EFFET: SAUVEGARDE AUTOMATIQUE =====
-  useEffect(() => {
-    if (!currentUser && adminView !== 'panel') return;
+// Fonction de chargement initial
+const loadInitialData = async () => {
+  try {
+    setIsOnline(false);
+    setSyncError(null);
 
-    const timeoutId = setTimeout(() => {
-      saveData();
-    }, 1000);
+    console.log("📥 Chargement des données initiales...");
 
-    return () => clearTimeout(timeoutId);
-  }, [users, profiles, loginAttempts, blockedUsers, loginStats]);
-
-  // ===== FONCTIONS DE DONNÉES =====
-  const loadData = async () => {
-    try {
-      const result = await storage.get('christmas-app-data');
-      if (result && result.value) {
-        const data = JSON.parse(result.value);
-        setUsers(data.users || INITIAL_USERS);
-        setProfiles(data.profiles || {});
-        setLoginAttempts(data.loginAttempts || {});
-        setBlockedUsers(data.blockedUsers || []);
-        setLoginStats(data.loginStats || {});
-        setLastSync(new Date());
-        console.log('✅ Données chargées depuis Firebase');
-      } else {
-        console.log('📝 Initialisation des données');
-        setUsers(INITIAL_USERS);
-        await saveData();
-      }
-    } catch (error) {
-      console.error('❌ Erreur chargement:', error);
-      setSyncError('Impossible de charger les données');
+    // Charger les utilisateurs
+    const loadedUsers = await storage.load('users');
+    if (loadedUsers) {
+      setUsers(loadedUsers);
+      console.log("✅ Utilisateurs chargés:", loadedUsers);
+    } else {
+      // Initialiser avec les utilisateurs par défaut
+      await storage.save('users', INITIAL_USERS);
+      setUsers(INITIAL_USERS);
+      console.log("✅ Utilisateurs initialisés");
     }
-  };
 
-  const saveData = async () => {
-    try {
-      const data = {
-        users,
-        profiles,
-        loginAttempts,
-        blockedUsers,
-        loginStats,
-        lastUpdate: new Date().toISOString()
-      };
-      
-      const success = await storage.set('christmas-app-data', JSON.stringify(data));
-      
-      if (success) {
-        setLastSync(new Date());
-        setSyncError(null);
-        console.log('✅ Données sauvegardées sur Firebase');
-      } else {
-        setSyncError('Sauvegarde locale uniquement');
-        console.warn('⚠️ Sauvegarde locale uniquement (hors ligne)');
-      }
-    } catch (error) {
-      console.error('❌ Erreur sauvegarde:', error);
-      setSyncError('Erreur de sauvegarde');
+    // Charger les profils
+    const loadedProfiles = await storage.load('profiles');
+    if (loadedProfiles) {
+      setProfiles(loadedProfiles);
+      console.log("✅ Profils chargés:", loadedProfiles);
     }
-  };
+
+    // Charger les utilisateurs bloqués
+    const loadedBlocked = await storage.load('blockedUsers');
+    if (loadedBlocked) {
+      setBlockedUsers(loadedBlocked);
+      console.log("✅ Utilisateurs bloqués chargés:", loadedBlocked);
+    }
+
+    // Charger les tentatives de connexion
+    const loadedAttempts = await storage.load('loginAttempts');
+    if (loadedAttempts) {
+      setLoginAttempts(loadedAttempts);
+      console.log("✅ Tentatives de connexion chargées:", loadedAttempts);
+    }
+
+    // Charger les statistiques
+    const loadedStats = await storage.load('loginStats');
+    if (loadedStats) {
+      setLoginStats(loadedStats);
+      console.log("✅ Statistiques chargées:", loadedStats);
+    }
+
+    setIsOnline(true);
+    setLastSync(Date.now());
+    console.log("✅ Toutes les données chargées avec succès");
+
+  } catch (error) {
+    console.error("❌ Erreur lors du chargement:", error);
+    setSyncError("Erreur de connexion");
+    setIsOnline(false);
+  }
+};
+
+
+
 
   // ===== FONCTIONS DE CONNEXION =====
   const handleLogin = () => {
@@ -1826,3 +1847,4 @@ function App() {
 }
 
 export default App;
+
