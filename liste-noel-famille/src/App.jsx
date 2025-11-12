@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Gift, User, Users, LogOut, Plus, Trash2, Edit2, Check, Lock, Unlock, Download, Upload, BarChart3, UserPlus, Shield, Wifi, WifiOff, X, AlertCircle } from 'lucide-react';
 import { storage } from './firebase';
+import { setupRealtimeListeners, loadInitialData, saveUsers, saveGifts, addGift } from './storage';
 
 // ===== CONSTANTES =====
 const INITIAL_USERS = {
@@ -1847,5 +1848,6 @@ const loadInitialData = async () => {
 }
 
 export default App;
+
 
 
