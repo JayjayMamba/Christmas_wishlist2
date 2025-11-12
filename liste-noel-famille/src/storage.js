@@ -12,56 +12,92 @@ const log = (emoji, message, data = null) => {
 // LISTENERS TEMPS RÉEL
 // ========================================
 export const setupRealtimeListeners = (userId, onDataChange) => {
-  log('🎧', 'Configuration des listeners pour:', userId);
+  log('👂', 'Configuration des listeners pour', userId);
   
   const listeners = [];
   
   try {
-    // Listener utilisateurs
+    // Listener USERS
+    log('👂', 'Abonnement aux changements de users');
     const usersRef = ref(database, 'users');
     const usersListener = onValue(usersRef, (snapshot) => {
-      log('📥', 'Mise à jour utilisateurs reçue');
       if (snapshot.exists()) {
+        log('🔔', 'Mise à jour reçue pour users:', snapshot.val());
         onDataChange({ users: snapshot.val() });
-        log('✅', 'Utilisateurs synchronisés');
+        log('🔔', 'Utilisateurs mis à jour:', snapshot.val());
       }
-    }, (error) => {
-      log('❌', 'Erreur listener utilisateurs:', error.message);
     });
-    listeners.push(usersListener);
+    listeners.push(() => usersListener());
 
-    // Listener cadeaux
+    // Listener GIFTS ← AJOUT CRUCIAL ICI !
+    log('👂', 'Abonnement aux changements de gifts');
     const giftsRef = ref(database, 'gifts');
     const giftsListener = onValue(giftsRef, (snapshot) => {
-      log('📥', 'Mise à jour cadeaux reçue');
       if (snapshot.exists()) {
-        const giftsObj = snapshot.val();
-        const giftsArray = Object.entries(giftsObj).map(([id, gift]) => ({
+        const giftsData = snapshot.val();
+        const giftsArray = Object.entries(giftsData).map(([id, gift]) => ({
           id,
           ...gift
         }));
+        log('🔔', 'Mise à jour reçue pour gifts:', giftsArray.length, 'cadeaux');
         onDataChange({ gifts: giftsArray });
-        log('✅', 'Cadeaux synchronisés:', giftsArray.length);
+        log('🔔', 'Cadeaux mis à jour:', giftsArray.length);
       } else {
+        log('🔔', 'Aucun cadeau dans la base');
         onDataChange({ gifts: [] });
       }
-    }, (error) => {
-      log('❌', 'Erreur listener cadeaux:', error.message);
     });
-    listeners.push(giftsListener);
+    listeners.push(() => giftsListener());
 
-    log('✅', 'Listeners configurés avec succès');
+    // Listener PROFILES
+    log('👂', 'Abonnement aux changements de profiles');
+    const profilesRef = ref(database, 'profiles');
+    const profilesListener = onValue(profilesRef, (snapshot) => {
+      if (snapshot.exists()) {
+        log('🔔', 'profiles mis à jour:', snapshot.val());
+        onDataChange({ profiles: snapshot.val() });
+      } else {
+        log('🔔', 'profiles supprimé ou vide');
+      }
+    });
+    listeners.push(() => profilesListener());
 
-    // Fonction de nettoyage
+    // Listener BLOCKED USERS
+    log('👂', 'Abonnement aux changements de blockedUsers');
+    const blockedRef = ref(database, 'blockedUsers');
+    const blockedListener = onValue(blockedRef, (snapshot) => {
+      if (snapshot.exists()) {
+        log('🔔', 'blockedUsers mis à jour:', snapshot.val());
+        onDataChange({ blockedUsers: snapshot.val() });
+      } else {
+        log('🔔', 'blockedUsers supprimé ou vide');
+      }
+    });
+    listeners.push(() => blockedListener());
+
+    // Listener LOGIN ATTEMPTS
+    log('👂', 'Abonnement aux changements de loginAttempts');
+    const attemptsRef = ref(database, 'loginAttempts');
+    const attemptsListener = onValue(attemptsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        log('🔔', 'loginAttempts mis à jour:', snapshot.val());
+        onDataChange({ loginAttempts: snapshot.val() });
+      } else {
+        log('🔔', 'loginAttempts supprimé ou vide');
+      }
+    });
+    listeners.push(() => attemptsListener());
+
     return () => {
-      log('🔌', 'Nettoyage des listeners');
+      log('🔌', 'Déconnexion des listeners');
+      listeners.forEach(unsubscribe => unsubscribe());
     };
-
   } catch (error) {
     log('❌', 'Erreur configuration listeners:', error.message);
-    return () => {};
+    throw error;
   }
 };
+
 
 // ========================================
 // CHARGEMENT INITIAL
